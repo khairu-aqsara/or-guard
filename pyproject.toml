@@ -1,0 +1,35 @@
+[project]
+name = "or-guard"
+version = "0.1.0"
+description = "TUI that sets an OpenRouter Model Availability guardrail policy from current provider discounts"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["textual>=8.2"]
+
+[project.scripts]
+or-guard = "or_guard.app:main"
+
+[dependency-groups]
+dev = ["mypy>=1.10", "pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# Textual declares BINDINGS and CSS as plain class attributes.
+ignore = ["RUF012"]
+
+[tool.mypy]
+files = ["src", "tests"]
+check_untyped_defs = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
