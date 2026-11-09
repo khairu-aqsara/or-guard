@@ -127,5 +127,3 @@ no Slack message.
 
 - Not tested: whether `openrouter/auto` routes only inside the allowlist when `allowed_providers` is set.
 - Not tested: what OpenRouter does when a second policy is created with `is_workspace_default`.
-- `:free` variants can still show the warning icon on the site. The format the site expects for them
-  is unknown.
