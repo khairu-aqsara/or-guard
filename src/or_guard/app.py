@@ -1,4 +1,4 @@
-"""Textual TUI: review discounted models and write them to a Model Availability policy."""
+"""Textual TUI: review discounted and cheap models and write them to a Model Availability policy."""
 
 from __future__ import annotations
 
@@ -21,12 +21,13 @@ from .deals import (
     build_offers,
     build_plan,
     deals_by_model,
+    ranked,
     stored_ids,
 )
 
 NEW_POLICY = "__new__"
 DEFAULT_POLICY_NAME = "Discounted models"
-COLUMNS = ("Allow", "Model", "Max off", "Input $/1M", "Output $/1M", "Discounted providers", "Status")
+COLUMNS = ("Allow", "Model", "Max off", "Input $/1M", "Output $/1M", "Providers", "Status")
 
 
 def _money(value: float) -> str:
@@ -84,12 +85,12 @@ class ConfirmScreen(ModalScreen[str | None]):
 
 
 class GuardApp(App):
-    TITLE = "OpenRouter discount guardrail"
+    TITLE = "OpenRouter model guardrail"
     CSS = """
-    #targets, #rules, #options { height: auto; padding: 0 1; }
+    #targets, #rules, #cheap, #options { height: auto; padding: 0 1; }
     #targets Select { width: 1fr; }
-    #rules Label { padding: 1 1 0 1; }
-    #rules Input { width: 12; }
+    #rules Label, #cheap Label { padding: 1 1 0 1; }
+    #rules Input, #cheap Input { width: 12; }
     #options Checkbox { margin-left: 1; }
     #options Button { margin-left: 2; }
     #table { height: 1fr; }
@@ -123,11 +124,18 @@ class GuardApp(App):
             yield Select([], prompt="Policy", id="policy", disabled=True)
         with Horizontal(id="rules"):
             yield Label("Min discount %")
-            yield Input("30", type="integer", id="min_discount")
+            yield Input("10", type="integer", id="min_discount")
             yield Label("Max input $/1M")
             yield Input("", type="number", placeholder="any", id="max_prompt")
             yield Label("Max output $/1M")
-            yield Input("", type="number", placeholder="any", id="max_completion")
+            yield Input("1", type="number", placeholder="any", id="max_completion")
+        with Horizontal(id="cheap"):
+            yield Label("Cheap input $/1M")
+            yield Input("0", type="number", placeholder="min", id="cheap_min_prompt")
+            yield Input("1", type="number", placeholder="max", id="cheap_max_prompt")
+            yield Label("Cheap output $/1M")
+            yield Input("0", type="number", placeholder="min", id="cheap_min_completion")
+            yield Input("1", type="number", placeholder="max", id="cheap_max_completion")
         with Horizontal(id="options"):
             yield Checkbox("Include :batch", False, id="batch")
             yield Checkbox("Restrict providers", True, id="restrict")
@@ -233,7 +241,7 @@ class GuardApp(App):
 
     @work(thread=True, exclusive=True, group="scan")
     def action_scan(self) -> None:
-        self.call_from_thread(self.set_status, "Scanning every model and provider for discounts...")
+        self.call_from_thread(self.set_status, "Scanning every model and provider for discounts and prices...")
         try:
             models = api.fetch_models()
             slugs = api.fetch_provider_slugs()
@@ -270,6 +278,10 @@ class GuardApp(App):
                 max_prompt=number("max_prompt"),
                 max_completion=number("max_completion"),
                 include_batch=self.query_one("#batch", Checkbox).value,
+                cheap_min_prompt=number("cheap_min_prompt"),
+                cheap_max_prompt=number("cheap_max_prompt"),
+                cheap_min_completion=number("cheap_min_completion"),
+                cheap_max_completion=number("cheap_max_completion"),
             )
         except ValueError:
             self.notify("Rules must be numbers.", severity="error")
@@ -301,11 +313,10 @@ class GuardApp(App):
         table.clear()
         for model in ALWAYS_ALLOWED:
             table.add_row(self.mark(model), model, "-", "-", "-", "router, no provider", "always allowed", key=model)
-        ranked = sorted(self.deals, key=lambda m: (-max(o.discount for o in self.deals[m]), m))
-        for model in ranked:
+        for model in ranked(list(self.deals), self.deals):
             offers = self.deals[model]
             best = offers[0]
-            providers = ", ".join(f"{o.provider} -{o.discount:.0%}" for o in offers)
+            providers = ", ".join(o.provider + (f" -{o.discount:.0%}" if o.discount > 0 else "") for o in offers)
             status = "in policy" if model in in_policy else "new"
             table.add_row(
                 self.mark(model),
@@ -334,7 +345,7 @@ class GuardApp(App):
             now = f"Policy '{self.policy['name']}' allows {len(current)} models now."
         offer_count = sum(len(v) for v in self.deals.values())
         self.set_status(
-            f"{len(self.deals)} models have a deal ({offer_count} provider offers). "
+            f"{len(self.deals)} models match the rules ({offer_count} provider offers). "
             f"{len(self.selected)} selected, plus {len(ALWAYS_ALLOWED)} always allowed. {now}"
         )
 
@@ -442,7 +453,7 @@ class GuardApp(App):
         token, channel = target
         names = {m["id"]: m.get("name", m["id"]) for m in self.models}
         try:
-            slack.post(token, channel, *slack.build_message(workspace, policy_name, plan, names))
+            slack.post(token, channel, *slack.build_message(workspace, policy_name, plan, names, self.deals))
         except (RuntimeError, OSError) as err:
             self.call_from_thread(self.notify, f"Policy saved, but the Slack post failed. {err}", severity="warning")
             return

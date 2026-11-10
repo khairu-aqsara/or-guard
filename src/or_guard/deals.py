@@ -28,6 +28,11 @@ class Rules:
     max_prompt: float | None = None  # USD per 1M input tokens
     max_completion: float | None = None  # USD per 1M output tokens
     include_batch: bool = False
+    # Cheap range, USD per 1M tokens. An offer inside it qualifies without a discount. Off while both maxima are None.
+    cheap_min_prompt: float | None = None
+    cheap_max_prompt: float | None = None
+    cheap_min_completion: float | None = None
+    cheap_max_completion: float | None = None
 
 
 def build_offers(models: list[dict], endpoints: dict[str, list[dict]], provider_slugs: dict[str, str]) -> list[Offer]:
@@ -60,14 +65,30 @@ def build_offers(models: list[dict], endpoints: dict[str, list[dict]], provider_
     return offers
 
 
-def qualifies(offer: Offer, rules: Rules) -> bool:
+def _within(value: float, low: float | None, high: float | None) -> bool:
+    return (low is None or value >= low) and (high is None or value <= high)
+
+
+def is_discounted(offer: Offer, rules: Rules) -> bool:
     if offer.discount <= 0 or offer.discount < rules.min_discount:
         return False
-    if rules.max_prompt is not None and offer.prompt > rules.max_prompt:
+    return _within(offer.prompt, None, rules.max_prompt) and _within(offer.completion, None, rules.max_completion)
+
+
+def is_cheap(offer: Offer, rules: Rules) -> bool:
+    if rules.cheap_max_prompt is None and rules.cheap_max_completion is None:
         return False
-    if rules.max_completion is not None and offer.completion > rules.max_completion:
+    return _within(offer.prompt, rules.cheap_min_prompt, rules.cheap_max_prompt) and _within(
+        offer.completion, rules.cheap_min_completion, rules.cheap_max_completion
+    )
+
+
+def qualifies(offer: Offer, rules: Rules) -> bool:
+    if offer.model.endswith(":free"):
         return False
-    return rules.include_batch or not offer.model.endswith(":batch")
+    if offer.model.endswith(":batch") and not rules.include_batch:
+        return False
+    return is_discounted(offer, rules) or is_cheap(offer, rules)
 
 
 def deals_by_model(offers: list[Offer], rules: Rules) -> dict[str, list[Offer]]:
@@ -79,6 +100,19 @@ def deals_by_model(offers: list[Offer], rules: Rules) -> dict[str, list[Offer]]:
     for group in grouped.values():
         group.sort(key=lambda o: (o.prompt, o.completion))
     return grouped
+
+
+def ranked(models: list[str], deals: dict[str, list[Offer]]) -> list[str]:
+    """Discounted models first, largest discount first. Cheap models without a discount follow, cheapest input
+    first. Models without offers, such as the router models, go last."""
+
+    def key(model: str) -> tuple[int, float, float, str]:
+        offers = deals.get(model)
+        if not offers:
+            return (1, 0.0, 0.0, model)
+        return (0, -max(o.discount for o in offers), offers[0].prompt, model)
+
+    return sorted(models, key=key)
 
 
 @dataclass

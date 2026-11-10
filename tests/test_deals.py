@@ -40,6 +40,7 @@ def test_deals_by_model_applies_rules_and_sorts_cheapest_first():
         offer("c/m", discount=0.0),  # no discount
         offer("d/m:batch", discount=0.5),  # batch excluded by default
         offer("e/m", discount=0.9, prompt=50.0),  # over the input price cap
+        offer("f/m:free", discount=1.0, prompt=0.0),  # free variants never qualify
     ]
 
     deals = deals_by_model(offers, Rules(min_discount=0.3, max_prompt=10.0))
@@ -47,6 +48,20 @@ def test_deals_by_model_applies_rules_and_sorts_cheapest_first():
     assert list(deals) == ["a/m"]
     assert [o.provider for o in deals["a/m"]] == ["p2", "p1"]
     assert "d/m:batch" in deals_by_model(offers, Rules(include_batch=True))
+
+
+def test_cheap_range_adds_models_without_a_discount():
+    offers = [
+        offer("a/m", discount=0.5, prompt=3.0),  # discounted, outside the cheap range
+        offer("b/m", discount=0.0, prompt=0.2),  # input 0.2, output 0.4: cheap
+        offer("c/m", discount=0.0, prompt=0.05),  # below the cheap minimum
+        offer("d/m", discount=0.0, prompt=0.4),  # output 0.8 over the cheap output maximum
+        offer("e/m:free", discount=0.0, prompt=0.2),  # free variants never qualify
+    ]
+    rules = Rules(cheap_min_prompt=0.1, cheap_max_prompt=0.5, cheap_max_completion=0.5)
+
+    assert sorted(deals_by_model(offers, rules)) == ["a/m", "b/m"]
+    assert sorted(deals_by_model(offers, Rules())) == ["a/m"]  # no cheap maximum, no cheap models
 
 
 def test_build_plan_replaces_the_list_and_keeps_routers():

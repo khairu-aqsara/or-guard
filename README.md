@@ -1,8 +1,8 @@
 # or-guard
 
 or-guard is a terminal UI that sets the **Model Availability** guardrail policy of one OpenRouter
-workspace. It scans every model and provider endpoint for a current discount, filters the offers by
-your rules, and shows the result in a table. You review the list, then apply it to the policy.
+workspace. It scans every model and provider endpoint for a current discount and price, filters the
+offers by your rules, and shows the result in a table. You review the list, then apply it to the policy.
 
 or-guard manages only the Model Availability policy. It reads the workspace list to pick a target,
 and it does not create, change or delete workspaces.
@@ -53,14 +53,17 @@ uv run or-guard
 
 | Field | Effect |
 | --- | --- |
-| Min discount % | An offer qualifies only when its discount is this value or more. Default 30. |
-| Max input $/1M | Upper limit for the input price, in USD per 1M tokens, after discount. Empty means no limit. |
-| Max output $/1M | Upper limit for the output price, in USD per 1M tokens, after discount. Empty means no limit. |
+| Min discount % | An offer qualifies only when its discount is this value or more. Default 10. |
+| Max input $/1M | Upper limit for the input price, in USD per 1M tokens, after discount. Empty means no limit. Default empty. |
+| Max output $/1M | Upper limit for the output price, in USD per 1M tokens, after discount. Empty means no limit. Default 1. |
+| Cheap input $/1M | Min and max input price, in USD per 1M tokens. A model inside the cheap range is in the table without a discount. Default 0 to 1. |
+| Cheap output $/1M | Min and max output price, in USD per 1M tokens. Both the input and the output price must be inside the range. The cheap range is off while both max fields are empty. Default 0 to 1. |
 | Include :batch | Also include `:batch` model variants. Off by default. |
-| Restrict providers | Also set `allowed_providers` to the providers that give the discount. On by default. |
+| Restrict providers | Also set `allowed_providers` to the providers of the qualifying offers. On by default. |
 
-A model is in the table when at least one provider endpoint qualifies. The table sorts models by
-their largest discount. The price columns show the cheapest qualifying offer.
+A model is in the table when at least one provider endpoint qualifies. `:free` model variants never
+qualify. The table shows discounted models first, largest discount first. Cheap models without a
+discount follow, cheapest input price first. The price columns show the cheapest qualifying offer.
 
 ### Keys
 
@@ -87,9 +90,12 @@ their largest discount. The price columns show the cheapest qualifying offer.
 - A policy that is synced from a legacy guardrail gets a new policy ID when you save it. The change
   does not flow back to the legacy guardrail.
 - When the list changed and the Slack notice is on, or-guard posts a notice to `SLACK_CHANNEL`. The
-  notice holds a one-column table of the allowed model names and a recommendation to use
-  `openrouter/auto` or `openrouter/auto-beta` in code. If the post fails, the policy stays saved and
-  the app shows a warning.
+  notice holds a table of the allowed models with the largest discount and the input and output
+  price of the cheapest offer, the same values as the app table. The rows use the app table order:
+  discounted models first, largest discount first, then cheap models, cheapest input price first. The
+  router models come last. The notice also holds a recommendation to use `openrouter/auto` or
+  `openrouter/auto-beta` in code. The notice shows the name and icon of the Slack app that owns the bot
+  token. If the post fails, the policy stays saved and the app shows a warning.
 
 ## How the scan works
 
