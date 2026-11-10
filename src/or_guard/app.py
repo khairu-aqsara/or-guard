@@ -168,7 +168,7 @@ class GuardApp(App):
         policy = self.policy
         if policy is None:
             return None
-        models = policy["config"].get("allowed_models")
+        models: list[str] | None = policy["config"].get("allowed_models")
         return None if models is None else [self.canonical.get(m, m) for m in models]
 
     # Loading data.
